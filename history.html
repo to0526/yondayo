@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>履歴 — 読書ログ</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#e8734a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <h1>読書履歴</h1>
+    </header>
+
+    <div id="historyContainer" style="padding-top:8px;"></div>
+
+    <!-- 空状態 -->
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <span class="empty-state__icon">📅</span>
+      <p class="empty-state__text">まだ読書ログがありません。<br>今日のタスクを完了させましょう！</p>
+      <a href="index.html" class="btn btn-primary">今日のタスクへ</a>
+    </div>
+  </div>
+
+  <!-- ボトムナビ -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📖</span>
+      今日
+    </a>
+    <a href="books.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📚</span>
+      書籍
+    </a>
+    <a href="history.html" class="bottom-nav__item is-active">
+      <span class="bottom-nav__icon">📅</span>
+      履歴
+    </a>
+  </nav>
+
+  <script type="module">
+    import { getDailyLogs } from './js/storage.js';
+    import { getAllBooks } from './js/books.js';
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatDate(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${weekdays[d.getDay()]}）`;
+    }
+
+    function renderHistory() {
+      const logs = getDailyLogs();
+      const books = getAllBooks();
+      const container = document.getElementById('historyContainer');
+      const emptyState = document.getElementById('emptyState');
+
+      if (logs.length === 0) {
+        container.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+      }
+      emptyState.style.display = 'none';
+
+      // 日付ごとにグループ化
+      const byDate = {};
+      logs.forEach((log) => {
+        if (!byDate[log.date]) byDate[log.date] = [];
+        byDate[log.date].push(log);
+      });
+
+      // 新しい日付順に並べ替え
+      const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+
+      container.innerHTML = sortedDates.map((date) => {
+        const dayLogs = byDate[date];
+        const allDone = dayLogs.every((l) => l.taskRead && l.taskMemo);
+
+        const entries = dayLogs.map((log) => {
+          const book = books.find((b) => b.id === log.bookId);
+          const bookTitle = book ? book.title : '（削除された本）';
+
+          return `
+            <div class="history-entry" style="${allDone ? 'border-left-color: var(--color-success)' : ''}">
+              <div class="history-entry__book">${escapeHtml(bookTitle)}</div>
+              <div class="history-entry__status">
+                <span>${log.taskRead ? '✅' : '☐'} 読む</span>
+                <span>${log.taskMemo ? '✅' : '☐'} メモ</span>
+              </div>
+              ${log.memo ? `<div class="history-entry__memo">${escapeHtml(log.memo)}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="history-day">
+            <div class="history-day__date">
+              ${formatDate(date)}
+              ${allDone ? ' 🔥' : ''}
+            </div>
+            <div style="padding: 0 20px;">
+              ${entries}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    renderHistory();
+  </script>
+</body>
+</html>

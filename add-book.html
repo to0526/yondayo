@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本を追加 — 読書ログ</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#e8734a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- ページヘッダー -->
+    <header class="page-header">
+      <button class="back-btn" id="backBtn">←</button>
+      <h1>本を追加</h1>
+    </header>
+
+    <!-- フォーム -->
+    <section class="section">
+      <form id="addBookForm" novalidate>
+
+        <div class="form-group">
+          <label class="form-label" for="title">
+            タイトル<span class="form-required">*</span>
+          </label>
+          <input
+            type="text"
+            id="title"
+            class="form-input"
+            placeholder="例: ゆるストイック"
+            maxlength="100"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="author">著者名</label>
+          <input
+            type="text"
+            id="author"
+            class="form-input"
+            placeholder="例: 田中あさ美"
+            maxlength="50"
+          />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="totalChapters">総章数</label>
+          <input
+            type="number"
+            id="totalChapters"
+            class="form-input"
+            placeholder="例: 12"
+            min="1"
+            max="999"
+            value="1"
+          />
+          <div class="form-hint">章・話・エピソードなど、区切りの単位を入力してください</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="currentChapter">開始章</label>
+          <input
+            type="number"
+            id="currentChapter"
+            class="form-input"
+            placeholder="例: 1"
+            min="1"
+            max="999"
+            value="1"
+          />
+          <div class="form-hint">途中から始める場合は現在の章を入力してください</div>
+        </div>
+
+        <div class="mt-16">
+          <button type="submit" class="btn btn-primary btn-block">追加する</button>
+        </div>
+
+      </form>
+    </section>
+  </div>
+
+  <script type="module">
+    import { addBook, getActiveBooks } from './js/books.js';
+
+    // 戻るボタン
+    document.getElementById('backBtn').addEventListener('click', () => {
+      history.back();
+    });
+
+    // フォーム送信
+    document.getElementById('addBookForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const title = document.getElementById('title').value.trim();
+      if (!title) {
+        alert('タイトルを入力してください');
+        document.getElementById('title').focus();
+        return;
+      }
+
+      const totalChapters = parseInt(document.getElementById('totalChapters').value, 10) || 1;
+      const currentChapter = parseInt(document.getElementById('currentChapter').value, 10) || 1;
+
+      if (currentChapter > totalChapters) {
+        alert('開始章は総章数以下にしてください');
+        document.getElementById('currentChapter').focus();
+        return;
+      }
+
+      // アクティブな書籍が既に2冊ある場合は警告
+      const activeBooks = getActiveBooks();
+      if (activeBooks.length >= 2) {
+        const ans = confirm('読書中の本が2冊あります。\n今日のタスクには最大2冊しか表示されません。\nそれでも追加しますか？');
+        if (!ans) return;
+      }
+
+      addBook({
+        title,
+        author: document.getElementById('author').value.trim(),
+        totalChapters,
+        currentChapter,
+      });
+
+      window.location.href = 'books.html';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>読書ログ</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#e8734a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="読書ログ" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div>
+        <h1>読書ログ</h1>
+        <div class="header-date" id="headerDate"></div>
+      </div>
+      <div class="streak-badge">
+        <span class="streak-icon">🔥</span>
+        <span id="streakCount">0</span>日
+      </div>
+    </header>
+
+    <!-- 全タスク完了バナー -->
+    <div class="complete-banner" id="completeBanner">
+      <div class="complete-banner__title">今日の読書完了！🎉</div>
+      <div class="complete-banner__sub" id="completeBannerSub">ストリーク継続中</div>
+    </div>
+
+    <!-- タスクリスト -->
+    <section class="section">
+      <div class="section-title">今日のタスク</div>
+      <div id="taskList"></div>
+    </section>
+
+    <!-- 本がない場合 -->
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <span class="empty-state__icon">📚</span>
+      <p class="empty-state__text">読書中の本がありません。<br>本を追加して読書を始めましょう！</p>
+      <a href="add-book.html" class="btn btn-primary">本を追加する</a>
+    </div>
+  </div>
+
+  <!-- ボトムナビ -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="bottom-nav__item is-active">
+      <span class="bottom-nav__icon">📖</span>
+      今日
+    </a>
+    <a href="books.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📚</span>
+      書籍
+    </a>
+    <a href="history.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📅</span>
+      履歴
+    </a>
+  </nav>
+
+  <!-- トースト -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Service Worker 登録
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch((err) => {
+        console.error('Service Worker の登録に失敗しました', err);
+      });
+    }
+  </script>
+
+  <script type="module">
+    import { getTodayTasks, toggleTaskRead, toggleTaskMemo, saveMemo, areAllTasksComplete } from './js/tasks.js';
+    import { checkAndUpdateStreak, incrementStreakIfComplete, getCurrentStreak } from './js/streak.js';
+    import { advanceChapter, getActiveBooks } from './js/books.js';
+    import { today } from './js/books.js';
+
+    // 日付表示
+    function formatDate(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      return `${d.getMonth() + 1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
+    }
+
+    document.getElementById('headerDate').textContent = formatDate(today());
+
+    // ストリーク初期化
+    checkAndUpdateStreak();
+    function refreshStreak() {
+      const s = getCurrentStreak();
+      document.getElementById('streakCount').textContent = s.count;
+    }
+    refreshStreak();
+
+    // トースト表示
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('is-visible');
+      setTimeout(() => el.classList.remove('is-visible'), 2200);
+    }
+
+    // 完了バナー更新
+    function updateCompleteBanner() {
+      const banner = document.getElementById('completeBanner');
+      if (areAllTasksComplete()) {
+        const result = incrementStreakIfComplete();
+        banner.classList.add('is-visible');
+        document.getElementById('completeBannerSub').textContent = `🔥 ${result.count}日連続達成！`;
+        refreshStreak();
+      } else {
+        banner.classList.remove('is-visible');
+      }
+    }
+
+    // タスクリスト描画
+    function renderTasks() {
+      const tasks = getTodayTasks();
+      const container = document.getElementById('taskList');
+      const emptyState = document.getElementById('emptyState');
+
+      if (tasks.length === 0) {
+        container.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+      }
+      emptyState.style.display = 'none';
+
+      container.innerHTML = tasks.map((task) => `
+        <div class="card task-group" data-book-id="${task.bookId}">
+          <div class="task-group-title">${escapeHtml(task.bookTitle)}</div>
+
+          <!-- 進捗バー -->
+          <div class="progress-wrap mb-8">
+            <div class="progress-bar">
+              <div class="progress-bar__fill" style="width:${Math.min(100, Math.round((task.currentChapter / task.totalChapters) * 100))}%"></div>
+            </div>
+            <span class="progress-label">${task.currentChapter} / ${task.totalChapters}章</span>
+          </div>
+
+          <!-- 読むタスク -->
+          <div class="task-item${task.taskRead ? ' is-done' : ''}" id="readItem-${task.bookId}">
+            <input
+              type="checkbox"
+              class="task-checkbox"
+              id="readCheck-${task.bookId}"
+              ${task.taskRead ? 'checked' : ''}
+              data-type="read"
+              data-book-id="${task.bookId}"
+            />
+            <div class="task-content">
+              <label class="task-label" for="readCheck-${task.bookId}">第${task.currentChapter}章を読む</label>
+            </div>
+          </div>
+
+          <!-- メモタスク -->
+          <div class="task-item${task.taskMemo ? ' is-done' : ''}" id="memoItem-${task.bookId}">
+            <input
+              type="checkbox"
+              class="task-checkbox"
+              id="memoCheck-${task.bookId}"
+              ${task.taskMemo ? 'checked' : ''}
+              data-type="memo"
+              data-book-id="${task.bookId}"
+            />
+            <div class="task-content">
+              <label class="task-label" for="memoCheck-${task.bookId}">3行メモを書く</label>
+              <div class="memo-area${!task.taskMemo ? ' is-open' : ''}" id="memoArea-${task.bookId}">
+                <textarea
+                  class="memo-textarea"
+                  id="memoText-${task.bookId}"
+                  placeholder="今日の気づきや感想を3行で..."
+                  rows="3"
+                >${escapeHtml(task.memo || '')}</textarea>
+                <button class="memo-save-btn" data-book-id="${task.bookId}">保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      // イベントリスナー登録
+      container.querySelectorAll('.task-checkbox[data-type="read"]').forEach((cb) => {
+        cb.addEventListener('change', handleReadCheck);
+      });
+      container.querySelectorAll('.task-checkbox[data-type="memo"]').forEach((cb) => {
+        cb.addEventListener('change', handleMemoCheck);
+      });
+      container.querySelectorAll('.memo-save-btn').forEach((btn) => {
+        btn.addEventListener('click', handleMemoSave);
+      });
+
+      updateCompleteBanner();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // 「読む」チェック変更
+    async function handleReadCheck(e) {
+      const bookId = e.target.dataset.bookId;
+      const done = e.target.checked;
+      const result = toggleTaskRead(bookId, done);
+
+      // 完了時に章を進めるか確認
+      if (result.shouldAdvanceChapter) {
+        const books = getActiveBooks();
+        const book = books.find((b) => b.id === bookId);
+        if (book && book.currentChapter < book.totalChapters) {
+          const ans = confirm(`「${book.title}」の第${book.currentChapter}章を読みましたか？\n次の章（第${book.currentChapter + 1}章）に進みますか？`);
+          if (ans) {
+            advanceChapter(bookId);
+            showToast('進捗を更新しました');
+          }
+        } else if (book && book.currentChapter >= book.totalChapters) {
+          showToast('読了おめでとうございます！');
+        }
+        renderTasks();
+        return;
+      }
+
+      // チェック状態のみ視覚更新
+      const item = document.getElementById(`readItem-${bookId}`);
+      item.classList.toggle('is-done', done);
+      updateCompleteBanner();
+    }
+
+    // 「メモ」チェック変更
+    function handleMemoCheck(e) {
+      const bookId = e.target.dataset.bookId;
+      const done = e.target.checked;
+      const memoText = document.getElementById(`memoText-${bookId}`)?.value || '';
+
+      if (done) {
+        toggleTaskMemo(bookId, true, memoText);
+      } else {
+        toggleTaskMemo(bookId, false);
+      }
+
+      const item = document.getElementById(`memoItem-${bookId}`);
+      item.classList.toggle('is-done', done);
+
+      const memoArea = document.getElementById(`memoArea-${bookId}`);
+      // メモをチェックしたら閉じる、外したら開く
+      if (done) {
+        memoArea.classList.remove('is-open');
+      } else {
+        memoArea.classList.add('is-open');
+      }
+
+      updateCompleteBanner();
+    }
+
+    // メモ保存ボタン
+    function handleMemoSave(e) {
+      const bookId = e.target.dataset.bookId;
+      const memoText = document.getElementById(`memoText-${bookId}`)?.value || '';
+      saveMemo(bookId, memoText);
+      showToast('メモを保存しました');
+    }
+
+    renderTasks();
+  </script>
+</body>
+</html>

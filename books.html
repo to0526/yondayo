@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>書籍一覧 — 読書ログ</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#e8734a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <h1>書籍一覧</h1>
+      <a href="add-book.html" class="btn btn-primary" style="padding:8px 14px;font-size:0.85rem;">＋ 追加</a>
+    </header>
+
+    <!-- 読書中 -->
+    <section class="section">
+      <div class="section-title">読書中</div>
+      <div id="activeBooksContainer"></div>
+    </section>
+
+    <!-- 読了済み -->
+    <section class="section">
+      <div class="section-title">読了済み</div>
+      <div id="doneBooksContainer"></div>
+    </section>
+
+    <!-- 空状態 -->
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <span class="empty-state__icon">📚</span>
+      <p class="empty-state__text">まだ本が登録されていません。</p>
+      <a href="add-book.html" class="btn btn-primary">本を追加する</a>
+    </div>
+  </div>
+
+  <!-- ボトムナビ -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📖</span>
+      今日
+    </a>
+    <a href="books.html" class="bottom-nav__item is-active">
+      <span class="bottom-nav__icon">📚</span>
+      書籍
+    </a>
+    <a href="history.html" class="bottom-nav__item">
+      <span class="bottom-nav__icon">📅</span>
+      履歴
+    </a>
+  </nav>
+
+  <!-- トースト -->
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import { getAllBooks, updateBook, deleteBook } from './js/books.js';
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('is-visible');
+      setTimeout(() => el.classList.remove('is-visible'), 2200);
+    }
+
+    function renderBooks() {
+      const books = getAllBooks();
+      const activeBooks = books.filter((b) => b.isActive);
+      const doneBooks = books.filter((b) => !b.isActive);
+
+      const activeContainer = document.getElementById('activeBooksContainer');
+      const doneContainer = document.getElementById('doneBooksContainer');
+      const emptyState = document.getElementById('emptyState');
+
+      if (books.length === 0) {
+        activeContainer.innerHTML = '';
+        doneContainer.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+      }
+      emptyState.style.display = 'none';
+
+      // アクティブな書籍
+      if (activeBooks.length === 0) {
+        activeContainer.innerHTML = '<p class="text-muted" style="font-size:0.88rem;padding:8px 0;">読書中の本はありません</p>';
+      } else {
+        activeContainer.innerHTML = activeBooks.map((book) => {
+          const pct = Math.min(100, Math.round((book.currentChapter / book.totalChapters) * 100));
+          return `
+            <div class="book-card" data-id="${book.id}">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                <div>
+                  <div class="book-card__title">${escapeHtml(book.title)}</div>
+                  <div class="book-card__author">${escapeHtml(book.author) || '著者不明'}</div>
+                </div>
+                <span class="book-badge book-badge--active">読書中</span>
+              </div>
+              <div class="progress-wrap">
+                <div class="progress-bar">
+                  <div class="progress-bar__fill" style="width:${pct}%"></div>
+                </div>
+                <span class="progress-label">${book.currentChapter} / ${book.totalChapters}章</span>
+              </div>
+              <div class="book-card__meta">開始日: ${book.createdAt}</div>
+              <div class="book-card__actions">
+                <button class="btn btn-secondary" style="padding:7px 14px;font-size:0.82rem;" data-action="edit" data-id="${book.id}">編集</button>
+                <button class="btn btn-danger" style="padding:7px 14px;font-size:0.82rem;" data-action="delete" data-id="${book.id}">削除</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 読了済み書籍
+      if (doneBooks.length === 0) {
+        doneContainer.innerHTML = '<p class="text-muted" style="font-size:0.88rem;padding:8px 0;">まだ読了した本はありません</p>';
+      } else {
+        doneContainer.innerHTML = doneBooks.map((book) => `
+          <div class="book-card" data-id="${book.id}" style="opacity:0.75;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <div class="book-card__title">${escapeHtml(book.title)}</div>
+                <div class="book-card__author">${escapeHtml(book.author) || '著者不明'}</div>
+              </div>
+              <span class="book-badge book-badge--done">読了</span>
+            </div>
+            <div class="book-card__meta">全${book.totalChapters}章 / 完了</div>
+            <div class="book-card__actions">
+              <button class="btn btn-secondary" style="padding:7px 14px;font-size:0.82rem;" data-action="reread" data-id="${book.id}">再読する</button>
+              <button class="btn btn-danger" style="padding:7px 14px;font-size:0.82rem;" data-action="delete" data-id="${book.id}">削除</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      // イベント登録
+      document.querySelectorAll('[data-action]').forEach((btn) => {
+        btn.addEventListener('click', handleAction);
+      });
+    }
+
+    function handleAction(e) {
+      const action = e.target.dataset.action;
+      const id = e.target.dataset.id;
+
+      if (action === 'delete') {
+        if (confirm('この本を削除しますか？')) {
+          deleteBook(id);
+          showToast('削除しました');
+          renderBooks();
+        }
+      } else if (action === 'reread') {
+        updateBook(id, { isActive: true, currentChapter: 1 });
+        showToast('再読リストに追加しました');
+        renderBooks();
+      } else if (action === 'edit') {
+        // 簡易編集：現在章の更新
+        const books = getAllBooks();
+        const book = books.find((b) => b.id === id);
+        if (!book) return;
+        const newChapter = prompt(`「${book.title}」\n現在の章を入力してください（現在: ${book.currentChapter}章）`, book.currentChapter);
+        if (newChapter === null) return;
+        const num = parseInt(newChapter, 10);
+        if (isNaN(num) || num < 1) {
+          alert('正しい章数を入力してください');
+          return;
+        }
+        updateBook(id, { currentChapter: Math.min(num, book.totalChapters) });
+        showToast('進捗を更新しました');
+        renderBooks();
+      }
+    }
+
+    renderBooks();
+  </script>
+</body>
+</html>
