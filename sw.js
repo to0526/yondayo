@@ -1,6 +1,6 @@
 // sw.js — Service Worker（オフライン対応）
 
-const CACHE_NAME = 'yondayo-v1';
+const CACHE_NAME = 'yondayo-v2';
 
 // キャッシュするアセット
 const ASSETS = [
@@ -15,6 +15,8 @@ const ASSETS = [
   '/js/tasks.js',
   '/js/streak.js',
   '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
 ];
 
 // インストール時にアセットをキャッシュ
